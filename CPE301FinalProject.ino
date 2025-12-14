@@ -9,6 +9,34 @@
 #define RDA 0x80
 #define TBE 0x20
 
+volatile unsigned char* ddr_b = (unsigned char*)0x24;
+volatile unsigned char* port_b = (unsigned char*)0x25;
+volatile unsigned char* ddr_h = (unsigned char*)0x101;
+volatile unsigned char* port_h = (unsigned char*)0x102;
+
+volatile unsigned char* ddr_e = (unsigned char*)0x2D;
+volatile unsigned char* port_e = (unsigned char*)0x2E;
+volatile unsigned char* pin_e = (unsigned char*)0x2C;
+volatile unsigned char* ddr_g = (unsigned char*)0x33;
+volatile unsigned char* port_g = (unsigned char*)0x34;
+
+inline void setPH(uint8_t bit) { *port_h |= (1 << bit); }
+inline void clrPH(uint8_t bit) { *port_h &= ~(1 << bit); }
+inline void setPB(uint8_t bit) { *port_b |= (1 << bit); }
+inline void clrPB(uint8_t bit) { *port_b &= ~(1 << bit); }
+
+inline void setPE(uint8_t bit) { *port_e |= (1 << bit); }
+inline void clrPE(uint8_t bit) { *port_e &= ~(1 << bit); }
+inline void setPG(uint8_t bit) { *port_g |= (1 << bit); }
+inline void clrPG(uint8_t bit) { *port_g &= ~(1 << bit); }
+
+unsigned long lastStartDebounceTime = 0;
+unsigned long lastResetDebounceTime = 0;
+int startButtonState = 0;
+int resetButtonState = 0;
+int lastStartReading = 1;
+int lastResetReading = 1;
+
 // UART Register Addresses
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
@@ -93,13 +121,16 @@ void setup() {
 
   stepperMotor.setSpeed(rpm);
 
-  pinMode(8, OUTPUT);
-  pinMode(9, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(11, OUTPUT);
+  //pinMode(8, OUTPUT);
+  //pinMode(9, OUTPUT);
+  *ddr_h |= (1 << 5) | (1 << 6);
+  //pinMode(10, OUTPUT);
+  //pinMode(11, OUTPUT);
+  *ddr_b |= (1 << 4) | (1 << 5);
 
-  pinMode(2, INPUT);
-  pinMode(3, INPUT);
+  //pinMode(2, INPUT);
+  //pinMode(3, INPUT);
+  *ddr_e &= ~((1 << 4) | (1 << 5));
 
   adc_init();
 
@@ -107,21 +138,16 @@ void setup() {
 
   disabled = true;
 
-  pinMode(5, OUTPUT);
-  pinMode(6, OUTPUT);
-  pinMode(7, OUTPUT);
+  //pinMode(5, OUTPUT);
+  *ddr_e |= (1 << 3);
+  //pinMode(6, OUTPUT);
+  //pinMode(7, OUTPUT);
+  *ddr_h |= (1 << 3) | (1 << 4);
 
   lcd.setCursor(0, 0);
   lcd.print("Setup complete!");
   Serial.print("setup complete");
 }
-
-/*void loop()
-{
-  analogWrite(5, 150);
-  digitalWrite(6, HIGH);
-  digitalWrite(7, LOW);
-}*/
 
 void loop()
 {
@@ -165,20 +191,32 @@ void loop()
       startMillis = currentMillis;
     }
     // Start/Stop button turns fan off and goes to DISABLED state
-    if (digitalRead(2) == HIGH)
+    //if (digitalRead(2) == HIGH)
+    int currentStartReading = (*pin_e & (1 << 4)) ? 1 : 0;
+    if (currentStartReading != lastStartReading)
+    {
+      lastStartDebounceTime = millis();
+    }
+    if ((millis() - lastStartDebounceTime) > 50)
+    {
+      if (currentStartReading != startButtonState)
       {
-        delay(100); // debounce
-        while (digitalRead(2) == HIGH); // wait release
-        disabled = true;
-        idle = false;
-        error = false;
-        running = false;
+        startButtonState = currentStartReading;
+        if (startButtonState == 0)
+        {
+          disabled = true;
+          idle = false;
+          error = false;
+          running = false;
 
-        // clear LCD
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("System Disabled");
+          // clear LCD
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("System Disabled");
+        }
       }
+    }
+    lastStartReading = currentStartReading;
     // Vent position works
     currentPot = analogRead(potPin);
     int prevSteps = map(prevPot, 0, 1023, 0, 2048);
@@ -194,38 +232,61 @@ void loop()
   if (disabled)
   {
     // yellow LED on
-    digitalWrite(8, HIGH);
-    digitalWrite(9, LOW);
-    digitalWrite(10, LOW);
-    digitalWrite(11, LOW);
+    //digitalWrite(8, HIGH);
+    //digitalWrite(9, LOW);
+    //digitalWrite(10, LOW);
+    //digitalWrite(11, LOW);
+    setPH(5);
+    clrPH(6);
+    clrPB(4);
+    clrPB(5);
 
     // fan turns off
     analogWrite(5, 0);
-    digitalWrite(6, LOW);
-    digitalWrite(7, LOW);
+    // digitalWrite(6, LOW);
+    // digitalWrite(7, LOW);
+    clrPH(3);
+    clrPH(4);
 
     // start button activates and goes to IDLE, ISR
-    if (digitalRead(2) == HIGH)
+    //if (digitalRead(2) == HIGH)
+    int currentStartReading = (*pin_e & (1 << 4)) ? 1 : 0;
+    if (currentStartReading != lastStartReading)
     {
-      delay(100); // debounce
-      while (digitalRead(2) == HIGH); // wait release
-      disabled = false;
-      idle = true;
+      lastStartDebounceTime = millis();
     }
-
+    if ((millis() - lastStartDebounceTime) > 50)
+    {
+      if (currentStartReading != startButtonState)
+      {
+        startButtonState = currentStartReading;
+        if (startButtonState == 0)
+        {
+          disabled = false;
+          idle = true;
+        }
+      }
+    }
+    lastStartReading = currentStartReading;
   }
   else if (idle)
   {
     // green LED on
-    digitalWrite(8, LOW);
-    digitalWrite(9, HIGH);
-    digitalWrite(10, LOW);
-    digitalWrite(11, LOW);
+    //digitalWrite(8, LOW);
+    //digitalWrite(9, HIGH);
+    //digitalWrite(10, LOW);
+    //digitalWrite(11, LOW);
+    clrPH(5);
+    setPH(6);
+    clrPB(4);
+    clrPB(5);
 
     // fan turns off
     analogWrite(5, 0);
-    digitalWrite(6, LOW);
-    digitalWrite(7, LOW);
+    // digitalWrite(6, LOW);
+    // digitalWrite(7, LOW);
+    clrPH(3);
+    clrPH(4);
 
     // Check water level and change to error if too low
     unsigned int val = adc_read(1); // read from channel 1 (A1)
@@ -250,14 +311,20 @@ void loop()
   {
     // fan turns off
     analogWrite(5, 0);
-    digitalWrite(6, LOW);
-    digitalWrite(7, LOW);
+    // digitalWrite(6, LOW);
+    // digitalWrite(7, LOW);
+    clrPH(3);
+    clrPH(4);
 
     // red LED on
-    digitalWrite(8, LOW);
-    digitalWrite(9, LOW);
-    digitalWrite(10, HIGH);
-    digitalWrite(11, LOW);
+    //digitalWrite(8, LOW);
+    //digitalWrite(9, LOW);
+    //digitalWrite(10, HIGH);
+    //digitalWrite(11, LOW);
+    clrPH(5);
+    clrPH(6);
+    setPB(4);
+    clrPB(5);
 
     // error message on LCD
     lcd.clear();
@@ -268,38 +335,57 @@ void loop()
     
 
     // reset button returns to IDLE
-    if (digitalRead(3) == HIGH)
+    //if (digitalRead(3) == HIGH)
+    int currentResetReading = (*pin_e & (1 << 5)) ? 1 : 0;
+    if (currentResetReading != lastResetReading)
     {
-      delay(100); // debounce
-      while (digitalRead(3) == HIGH); // wait release
-      error = false;
-      idle = true;
+      lastResetDebounceTime = millis();
     }
+    if ((millis() - lastResetDebounceTime) > 50)
+    {
+      if (currentResetReading != resetButtonState)
+      {
+        resetButtonState = currentResetReading;
+        if (resetButtonState == 0)
+        {
+          idle = true;
+          error = false;
+        }
+      }
+    }
+    lastResetReading = currentResetReading;
   }
   else if (running)
   {
     // blue LED on
-    digitalWrite(8, LOW);
-    digitalWrite(9, LOW);
-    digitalWrite(10, LOW);
-    digitalWrite(11, HIGH);
+    //digitalWrite(8, LOW);
+    //digitalWrite(9, LOW);
+    //digitalWrite(10, LOW);
+    //digitalWrite(11, HIGH);
+    clrPH(5);
+    clrPH(6);
+    clrPB(4);
+    setPB(5);
 
    
     // fan motor on
     analogWrite(5, 150);
-    digitalWrite(6, HIGH);
-    digitalWrite(7, LOW);
+    // digitalWrite(6, HIGH);
+    // digitalWrite(7, LOW);
+    setPH(3);
+    clrPH(4);
 
     // switch back to IDLE following temp/humid levels
     if (temperature < 26)
     {
       analogWrite(5, 0);
-      digitalWrite(6, LOW);
-      digitalWrite(7, LOW);
+      // digitalWrite(6, LOW);
+      // digitalWrite(7, LOW);
+      clrPH(3);
+      clrPH(4);
       running = false;
       idle = true;
     }
-    
   }
 }
 
