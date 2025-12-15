@@ -156,7 +156,7 @@ void loop()
   {
     // Humidity and Temperature monitored and reported
     currentMillis = millis();
-    if (currentMillis - startMillis >= 5000)
+    if (currentMillis - startMillis >= 60000)
     {
       // Attempt to read the temperature and humidity values from the DHT11 sensor.
       int result = dht11.readTemperatureHumidity(temperature, humidity);
